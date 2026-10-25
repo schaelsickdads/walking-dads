@@ -273,7 +273,7 @@ textarea { resize: vertical; min-height: 72px; }
           </div>
           <div class="field">
             <label for="f-zeit">Start</label>
-            <input type="time" id="f-zeit" value="10:00">
+            <input type="time" id="f-zeit">
           </div>
         </div>
         <fieldset>
@@ -281,7 +281,7 @@ textarea { resize: vertical; min-height: 72px; }
           <div class="chips" id="dauer-chips">
             <button type="button" class="chip" data-m="30" aria-pressed="false">30 Min</button>
             <button type="button" class="chip" data-m="45" aria-pressed="false">45 Min</button>
-            <button type="button" class="chip" data-m="60" aria-pressed="true">1 Std</button>
+            <button type="button" class="chip" data-m="60" aria-pressed="false">1 Std</button>
             <button type="button" class="chip" data-m="90" aria-pressed="false">1,5 Std</button>
             <button type="button" class="chip" data-m="120" aria-pressed="false">2 Std</button>
           </div>
@@ -564,7 +564,7 @@ textarea { resize: vertical; min-height: 72px; }
   }
 
   /* ---------- Formular ---------- */
-  var dauer = 60, previewTimer;
+  var dauer = 0, previewTimer;
   function readForm() {
     return {
       t: $("f-treff").value.trim(),
@@ -576,8 +576,8 @@ textarea { resize: vertical; min-height: 72px; }
     var r = readForm();
     var p = clean(Object.assign({}, r, { t: r.t || "Standort folgt" }));
     var box = $("preview-card");
-    if (!p) {
-      box.replaceChildren(h("p", { class: "hint", text: "Sobald Datum und Uhrzeit stehen, erscheint hier die Einladung." }));
+    if (!p || !dauer) {
+      box.replaceChildren(h("p", { class: "hint", text: "Sobald Datum, Uhrzeit und Dauer stehen, erscheint hier die Einladung." }));
       return;
     }
     box.replaceChildren(inviteCard(p, "preview"));
@@ -734,6 +734,7 @@ textarea { resize: vertical; min-height: 72px; }
     var err = $("form-err");
     if (!readForm().t) { err.textContent = "Bitte einen Standort eintragen, damit alle ihn finden."; return; }
     if (!r) { err.textContent = "Bitte Datum und Uhrzeit angeben."; return; }
+    if (!dauer) { err.textContent = "Bitte wähle, wie lange die Runde etwa dauert."; return; }
     if (r.d < todayISO) { err.textContent = "Das Datum liegt in der Vergangenheit."; return; }
     err.textContent = "";
     $("result").hidden = false;
@@ -762,9 +763,6 @@ textarea { resize: vertical; min-height: 72px; }
   }
 
   function init() {
-    var d = new Date();
-    d.setDate(d.getDate() + (((6 - d.getDay() + 7) % 7) || 7)); /* nächster Samstag */
-    $("f-datum").value = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
     $("f-datum").min = todayISO;
     try {
       $("f-name").value = localStorage.getItem("wd-name") || "";
