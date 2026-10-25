@@ -136,6 +136,11 @@ h2.sec small { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.1
 .hint { margin: 0; font-size: 0.85rem; color: var(--muted); }
 .over { margin: 0; color: var(--bad); font-weight: 600; }
 
+.rsvp .lbl { font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.kids { display: grid; gap: 8px; }
+.kid-row { display: grid; grid-template-columns: minmax(0, 1fr) 7rem auto; gap: 8px; }
+.btn.small { padding: 8px 14px; font-size: 0.9rem; box-shadow: none; }
+
 /* Buttons */
 .btn {
   display: inline-block;
@@ -413,11 +418,11 @@ textarea { resize: vertical; min-height: 72px; }
     var n = waNumber(phone);
     return "https://wa.me/" + (n ? n : "") + "?text=" + encodeURIComponent(text);
   }
-  function shareText(r, link) {
+  function shareText(r, link, plain) {
     var L = [];
-    L.push("🧟 Walking Dads: " + fmtDate(r.d, { weekday: "long", day: "numeric", month: "long" }) + ", " + r.z + " Uhr");
-    L.push("📍 " + r.t);
-    L.push("⏱ ca. " + dauerText(r.m) + ", Kinderwagen-Tempo");
+    L.push((plain ? "" : "🧟 ") + "Walking Dads: " + fmtDate(r.d, { weekday: "long", day: "numeric", month: "long" }) + ", " + r.z + " Uhr");
+    L.push((plain ? "Standort: " : "📍 ") + r.t);
+    L.push((plain ? "Dauer: " : "⏱ ") + "ca. " + dauerText(r.m) + ", Kinderwagen-Tempo");
     if (r.n) L.push(r.n);
     L.push("");
     L.push("Hier zu- oder absagen: " + link);
@@ -454,23 +459,82 @@ textarea { resize: vertical; min-height: 72px; }
       rs.append(h("p", { class: "over", text: "Diese Runde ist vorbei." }));
     } else {
       var when = fmtDate(r.d, { weekday: "short", day: "numeric", month: "numeric" }) + ", " + r.z + " Uhr";
-      var mk = function (label, cls, text) {
-        var a = h("a", { class: "btn " + cls, target: "_blank", rel: "noopener", text: label });
-        if (mode === "preview") a.setAttribute("aria-disabled", "true");
-        else a.setAttribute("href", waUrl("🧟 Walking Dads, " + when + ": " + text, r.p));
-        return a;
+      var live = mode !== "preview";
+      var nameInp = h("input", { type: "text", id: "r-name", maxlength: "40", autocomplete: "given-name", placeholder: "Dein Name" });
+      var kidsBox = h("div", { class: "kids" });
+      var err = h("p", { class: "err", role: "alert" });
+      var links = {};
+      var KINDS = { go: ["Ich komme", "go"], maybe: ["Vielleicht", "maybe"], no: ["Kann nicht", "no"] };
+      var collect = function () {
+        var ks = [];
+        kidsBox.querySelectorAll(".kid-row").forEach(function (row) {
+          var i = row.querySelectorAll("input");
+          var n = i[0].value.trim(), a = i[1].value.trim();
+          if (n || a) ks.push({ n: n, a: a });
+        });
+        return ks;
       };
-      rs.append(
-        h("span", { class: "wx-title", text: "Bist du dabei?" }),
-        h("div", { class: "rsvp-grid" },
-          mk("Ich komme", "go", "Ich komme 👍"),
-          mk("Vielleicht", "maybe", "Vielleicht 🤔"),
-          mk("Kann nicht", "no", "Kann leider nicht 👎")
-        ),
-        h("p", { class: "hint", text: r.p
-          ? "Öffnet WhatsApp mit fertiger Antwort direkt an " + (r.v || "den Organisator") + "."
-          : "Öffnet WhatsApp mit fertiger Antwort. Du suchst nur noch den Chat aus, zum Beispiel die Gruppe." })
-      );
+      var ageText = function (a) { return /^\d+$/.test(a) ? a + " J." : a; };
+      var message = function (kind) {
+        var name = nameInp.value.trim(), ks = collect();
+        var s = "Moin" + (r.v ? " " + r.v : "") + ", " + (name ? "hier " + name + ": " : "");
+        s += kind === "no" ? "Ich kann am " + when + " leider nicht zum Walking Dads kommen."
+          : (kind === "go" ? "Ich komme" : "Vielleicht komme ich") + " zum Walking Dads am " + when + ".";
+        if (kind !== "no" && ks.length) {
+          s += " Mit dabei: " + ks.map(function (k) { return (k.n || "Kind") + (k.a ? " (" + ageText(k.a) + ")" : ""); }).join(", ") + ".";
+        }
+        return s;
+      };
+      var refresh = function () { Object.keys(links).forEach(function (k) { links[k].setAttribute("href", waUrl(message(k), r.p)); }); };
+      var save = function () {
+        try { localStorage.setItem("wd-rname", nameInp.value); localStorage.setItem("wd-kids", JSON.stringify(collect())); } catch (e) {}
+      };
+      var addKid = function (n, a) {
+        var row = h("div", { class: "kid-row" });
+        var ni = h("input", { type: "text", maxlength: "30", placeholder: "Name Kind", "aria-label": "Name des Kindes" });
+        var ai = h("input", { type: "text", maxlength: "12", placeholder: "Alter", "aria-label": "Alter des Kindes" });
+        ni.value = n || ""; ai.value = a || "";
+        var rm = h("button", { type: "button", class: "btn alt small", "aria-label": "Kind entfernen", text: "×" });
+        rm.addEventListener("click", function () { row.remove(); save(); refresh(); });
+        [ni, ai].forEach(function (x) { x.addEventListener("input", function () { save(); refresh(); }); });
+        row.append(ni, ai, rm);
+        kidsBox.append(row);
+      };
+      var grid = h("div", { class: "rsvp-grid" });
+      Object.keys(KINDS).forEach(function (k) {
+        var a = h("a", { class: "btn " + KINDS[k][1], target: "_blank", rel: "noopener", text: KINDS[k][0] });
+        if (!live) a.setAttribute("aria-disabled", "true");
+        else a.addEventListener("click", function (ev) {
+          if (k === "go" && !nameInp.value.trim()) {
+            ev.preventDefault();
+            err.textContent = "Bitte trag zuerst deinen Namen ein.";
+            nameInp.focus();
+            return;
+          }
+          err.textContent = "";
+        });
+        links[k] = a;
+        grid.append(a);
+      });
+      rs.append(h("span", { class: "wx-title", text: "Bist du dabei?" }));
+      if (live) {
+        var addBtn = h("button", { type: "button", class: "btn alt small", text: "+ Kind hinzufügen" });
+        addBtn.addEventListener("click", function () { addKid("", ""); kidsBox.lastChild.querySelector("input").focus(); });
+        nameInp.addEventListener("input", function () { save(); refresh(); err.textContent = ""; });
+        var stored = [];
+        try { nameInp.value = localStorage.getItem("wd-rname") || ""; stored = JSON.parse(localStorage.getItem("wd-kids") || "[]"); } catch (e) {}
+        (Array.isArray(stored) ? stored : []).slice(0, 6).forEach(function (k) { if (k) addKid(String(k.n || ""), String(k.a || "")); });
+        if (!kidsBox.children.length) addKid("", "");
+        rs.append(
+          h("div", { class: "field" }, h("label", { for: "r-name", text: "Dein Name" }), nameInp),
+          h("div", { class: "field" }, h("span", { class: "lbl", text: "Deine Kinder, Name und Alter" }), kidsBox, h("div", {}, addBtn)),
+          err
+        );
+        refresh();
+      }
+      rs.append(grid, h("p", { class: "hint", text: r.p
+        ? "Öffnet WhatsApp mit fertiger Antwort direkt an " + (r.v || "den Organisator") + "."
+        : "Öffnet WhatsApp mit fertiger Antwort. Du suchst nur noch den Chat aus, zum Beispiel die Gruppe." }));
     }
     card.append(rs);
     return card;
@@ -661,7 +725,7 @@ textarea { resize: vertical; min-height: 72px; }
     var link = linkFor(r);
     curLink = link; curText = shareText(r, link);
     $("link").value = link;
-    $("share").setAttribute("href", waUrl(curText, ""));
+    $("share").setAttribute("href", waUrl(shareText(r, link, true), ""));
     $("open").setAttribute("href", "#r=" + enc(r));
     refreshImage(r);
   }
